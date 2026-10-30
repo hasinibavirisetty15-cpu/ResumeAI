@@ -1,0 +1,11 @@
+Python
+
+pycache/ .py[cod] .pyo .venv/ venv/ env/
+
+Streamlit
+
+.streamlit/secrets.toml
+
+Local/editor files
+
+.vscode/ .DS_Store Thumbs.db

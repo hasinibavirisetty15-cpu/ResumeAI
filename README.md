@@ -1,5 +1,7 @@
 # ResumeAI --- AI Resume Analyzer & ATS Optimizer
+## 🚀 Live Demo
 
+Try ResumeAI here: https://resumeai-qguuz9q9cuccuw2kwhpyfy.streamlit.app/
 A Streamlit portfolio project that compares a resume with a job
 description and provides ATS-style heuristic scores, skill and keyword
 matches, improvement suggestions, an optimized resume draft, and

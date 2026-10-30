@@ -124,14 +124,11 @@ downloadable PDF reports.
 -   Consider accessibility and security review before public deployment.
 ## 📸 Application Screenshots
 
-### 1. ResumeAI Homepage
-![ResumeAI Homepage](screenshots/homepage.png)
+![ResumeAI Homepage](homepage.png)
 
-### 2. Resume Analysis Results
-![Resume Analysis](screenshots/analysis.png)
+![Resume Analysis](analysis.png)
 
-### 3. Optimized Resume
-![Optimized Resume](screenshots/optimized-resume.png)
+![Optimized Resume](optimized-resume.png)
 
 ## 🌐 Live Demo
 [Try ResumeAI](https://resumeai-qguuz9q9cuccuw2kwhpyfy.streamlit.app/)

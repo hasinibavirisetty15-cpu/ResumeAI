@@ -1156,7 +1156,7 @@ def extract_email(text):
 def extract_phone(text):
 
     match = re.search(
-        r"(?:\+91[\s-]?)?[6-9]\d{9}",
+        r"(?:\+91[\s-]?)?[6-9]\d{4}[\s-]?\d{5}",
         text
     )
 
@@ -1803,6 +1803,18 @@ def generate_project_suggestions(data):
 # SUMMARY
 # ============================================================
 
+def order_by_job(skills, jd_text):
+    """Show skills in the order the job description mentions them."""
+
+    jd = normalize_text(jd_text or "")
+
+    def position(skill):
+        found = jd.find(skill)
+        return found if found != -1 else len(jd) + 1
+
+    return sorted(skills, key=position)
+
+
 def generate_summary(data):
 
     role = data.get(
@@ -1810,13 +1822,19 @@ def generate_summary(data):
         "software role"
     )
 
-    skills = data.get(
-        "skill_data",
-        {}
-    ).get(
-        "matching_required",
-        []
+    skills = order_by_job(
+        data.get(
+            "skill_data",
+            {}
+        ).get(
+            "matching_required",
+            []
+        ),
+        data.get("jd_text", "")
     )
+
+    if "rest api" in skills and "api" in skills:
+        skills.remove("api")
 
     skills_text = ", ".join(
         display_skill(x) for x in skills[:6]
@@ -1886,37 +1904,57 @@ SECTION_HEADINGS = {
                    "internship", "internships", "work history"],
     "education": ["education", "academic background", "qualification",
                   "academics"],
-    "certifications": ["certifications", "certificates",
-                       "courses & certifications",
-                       "courses and certifications", "courses"],
+    "certifications": ["certifications", "certificates", "courses"],
     "achievements": ["achievements", "awards", "honors"],
     "strengths": ["strengths"],
     "languages": ["languages"],
     "interests": ["interests", "hobbies"],
+    "additional": ["additional information", "other"],
 }
 
-ALL_HEADINGS = {
-    h for names in SECTION_HEADINGS.values() for h in names
-}
+# Characters PDFs use for bullets (including the odd ones pypdf returns).
+BULLET_CHARS = "\u2022\u00b7\u25cf\u25aa\u25e6\u2023\uf0b7\x7f*-"
+BULLET_RE = re.compile(rf"^[\s{re.escape(BULLET_CHARS)}]+")
 
 
-def _is_heading(line):
-    plain = re.sub(r"[^a-z& ]", "", line.lower()).strip()
-    return plain in ALL_HEADINGS
+def _heading_key(line):
+    """Return the section key if the line is a heading, else None."""
+
+    stripped = line.strip()
+
+    if not stripped or len(stripped.split()) > 6:
+        return None
+
+    if re.search(r"[@|:]|\d", stripped):
+        return None
+
+    plain = re.sub(r"[^a-z& ]", "", stripped.lower()).strip()
+
+    for key, names in SECTION_HEADINGS.items():
+        for name in names:
+            if plain == name or plain.startswith(name + " "):
+                # "Certifications & Learning" still counts as
+                # certifications, but a normal sentence does not.
+                if stripped.isupper() or plain == name:
+                    return key
+
+    # Any other ALL-CAPS short line is treated as an unknown heading
+    # so that a section stops at it.
+    if stripped.isupper() and len(stripped) > 3:
+        return "other"
+
+    return None
 
 
 def extract_section(text, section):
     """Return the lines under a heading of the uploaded resume."""
 
-    wanted = SECTION_HEADINGS.get(section, [])
     lines = [line.strip() for line in text.splitlines()]
 
     start = None
 
     for i, line in enumerate(lines):
-        plain = re.sub(r"[^a-z& ]", "", line.lower()).strip()
-
-        if plain in wanted:
+        if _heading_key(line) == section:
             start = i + 1
             break
 
@@ -1930,7 +1968,7 @@ def extract_section(text, section):
         if not line:
             continue
 
-        if _is_heading(line):
+        if _heading_key(line) is not None:
             break
 
         collected.append(line)
@@ -1938,21 +1976,43 @@ def extract_section(text, section):
     return collected
 
 
-def _as_bullets(lines):
-    result = []
+def _as_bullets(lines, improve=True):
+    items = []   # (is_bullet, text)
 
     for line in lines:
-        is_bullet = bool(re.match(r"^[\u2022\-*\u00b7]\s*", line))
-        line = re.sub(r"^[\u2022\-*\u00b7]\s*", "", line).strip()
+        has_bullet = bool(
+            re.match(rf"^\s*[{re.escape(BULLET_CHARS)}]", line)
+        )
+        clean = (
+            BULLET_RE.sub("", line).strip()
+            if has_bullet else line.strip()
+        )
 
-        if not line:
+        if not clean:
             continue
 
-        # Only rewrite real bullet sentences, not project titles.
-        if is_bullet and len(line.split()) > 5:
-            line = improve_bullet(line)
+        # A wrapped line (starts lowercase) belongs to the bullet above.
+        if (
+            not has_bullet
+            and items
+            and items[-1][0]
+            and clean[0].islower()
+        ):
+            items[-1] = (True, items[-1][1] + " " + clean)
+            continue
 
-        result.append("\u2022 " + line)
+        items.append((has_bullet, clean))
+
+    result = []
+
+    for is_bullet, text in items:
+        if is_bullet:
+            if improve and len(text.split()) > 5:
+                text = improve_bullet(text)
+            result.append("\u2022 " + text)
+        else:
+            # Project titles and technology lines stay as plain lines.
+            result.append(text)
 
     return result
 
@@ -1971,9 +2031,10 @@ def generate_optimized_resume(data):
 
     # Skills that match the job come first, then the rest of the
     # resume's own skills.
-    matched = (
+    matched = order_by_job(
         skill_data.get("matching_required", [])
-        + skill_data.get("matching_preferred", [])
+        + skill_data.get("matching_preferred", []),
+        data.get("jd_text", "")
     )
 
     skills = list(
@@ -1981,6 +2042,9 @@ def generate_optimized_resume(data):
             matched + skill_data.get("resume_skills", [])
         )
     )
+
+    if "rest api" in skills and "api" in skills:
+        skills.remove("api")
 
     missing = skill_data.get("missing_required", [])
 
@@ -2027,10 +2091,12 @@ def generate_optimized_resume(data):
         parts.append("")
         parts.append(title)
 
-        if key in ("education",):
+        if key == "education":
             parts.extend(lines)
         else:
-            parts.extend(_as_bullets(lines))
+            parts.extend(
+                _as_bullets(lines, improve=(key != "certifications"))
+            )
 
     languages = extract_section(text, "languages")
 

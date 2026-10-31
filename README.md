@@ -1,134 +1,66 @@
-# ResumeAI --- AI Resume Analyzer & ATS Optimizer
-## 🚀 Live Demo
+# ResumeAI: AI Resume Analyzer & ATS Optimizer
 
-Try ResumeAI here: https://resumeai-qguuz9q9cuccuw2kwhpyfy.streamlit.app/
-A Streamlit portfolio project that compares a resume with a job
-description and provides ATS-style heuristic scores, skill and keyword
-matches, improvement suggestions, an optimized resume draft, and
-interview preparation materials.
+A Streamlit app that compares a resume against a job description and gives ATS-style match scores, skill and keyword gaps, and suggestions for improvement.
 
-> **Important:** This project uses rule-based text matching and
-> heuristics. Its scores are estimates, not scores from an employer's
-> ATS, not a hiring prediction, and not a guarantee of interview
-> selection.
+**[Live Demo](https://resumeai-qguuz9q9cuccuw2kwhpyfy.streamlit.app/)**
+
+> **Note:** ResumeAI uses rule-based text matching and heuristics. Scores are estimates. They are not real employer ATS scores and do not predict hiring outcomes.
+
+## Screenshots
+
+![Homepage](homepage.png)
+![Resume analysis](analysis.png)
+![Optimized resume](optimized-resume.png)
 
 ## Features
 
--   Upload resumes in PDF or DOCX format.
--   Extract and display resume text.
--   Compare detected skills and keywords against a pasted job
-    description.
--   Calculate ATS-style, job-match, skill-match, keyword-match,
-    structure, and content scores.
--   Show matched and potentially missing skills/keywords.
--   Provide strengths, improvement suggestions, and a suggested
-    professional summary.
--   Generate an optimized resume draft for review.
--   Suggest projects and interview questions, with a preparation plan.
--   Download a PDF analysis report.
--   Reset the current analysis.
--   Handle empty job descriptions and unsupported file types with
-    user-facing messages.
+- Upload a resume in PDF or DOCX format and view the extracted text
+- Compare detected skills and keywords against a pasted job description
+- ATS-style scores for job match, skills, keywords, structure, and content
+- Matched and missing skills/keywords, strengths, and improvement suggestions
+- Suggested professional summary and an optimized resume draft
+- Project ideas, interview questions, and a preparation plan
+- Download the analysis as a PDF report
+- Input validation for empty job descriptions and unsupported file types
 
-## Requirements
+## Tech Stack
 
--   Python 3.10 or later recommended
--   The packages listed in `requirements.txt`
--   Visual Studio Code or another terminal
+Python, Streamlit
 
-## Setup on Windows
+## Run Locally
 
-1.  Open the project folder in VS Code.
+```bash
+git clone https://github.com/hasinibavirisetty15-cpu/ResumeAI.git
+cd ResumeAI
+python -m venv .venv
+# Windows: .\.venv\Scripts\Activate.ps1
+# macOS/Linux: source .venv/bin/activate
+python -m pip install -r requirements.txt
+python -m streamlit run resume_analyzer.py
+```
 
-2.  Open **Terminal → New Terminal**.
+Then open `http://localhost:8501`.
 
-3.  (Recommended) Create a virtual environment:
+## How to Use
 
-    ``` powershell
-    python -m venv .venv
-    ```
+1. Upload a text-based PDF or DOCX resume.
+2. Paste the target job description.
+3. Click **Analyze Resume** and review the results.
+4. Download the PDF report if needed.
 
-4.  Activate it:
+Scanned or image-only PDFs may not work because no text can be extracted.
 
-    ``` powershell
-    .\.venv\Scripts\Activate.ps1
-    ```
+## Run Tests
 
-    If PowerShell blocks activation, you can skip virtual-environment
-    activation and run the next commands with your normal Python
-    installation.
+```bash
+python -m unittest discover tests
+```
 
-5.  Install dependencies:
+## Privacy
 
-    ``` powershell
-    python -m pip install -r requirements.txt
-    ```
+The app is not designed to save uploaded resumes to a database. Avoid uploading sensitive documents, and use resumes only with the owner's permission.
 
-6.  Start the app from the folder containing `resume_analyzer.py`:
+## Future Work
 
-    ``` powershell
-    python -m streamlit run resume_analyzer.py
-    ```
-
-7.  Open the local address printed in the terminal (usually
-    `http://localhost:8501`).
-
-## How to use
-
-1.  Upload a text-based PDF or DOCX resume.
-2.  Paste the target job description.
-3.  Select **Analyze Resume**.
-4.  Review the overview, job match, skills, improvement suggestions,
-    project suggestions, optimized resume, interview preparation,
-    structure, and extracted resume text.
-5.  Download the PDF report if needed.
-
-Scanned/image-only PDFs may not provide extractable text. If extraction
-fails, try a text-based PDF or DOCX.
-
-## Test checklist
-
--   [ ] PDF resume upload and analysis
--   [ ] DOCX resume upload and analysis
--   [ ] Empty job description shows a helpful message
--   [ ] Reset clears the previous analysis
--   [ ] Different job descriptions produce updated results
--   [ ] PDF report downloads and opens
--   [ ] Unsupported file types are rejected safely
--   [ ] Optimized resume and interview preparation sections display
-
-## Privacy and responsible use
-
-Use resumes only with the person's permission. The app is designed not
-to intentionally save uploaded resumes to a database, but users should
-still avoid uploading sensitive documents to environments they do not
-control. Verify all extracted information and generated suggestions.
-Never add achievements, skills, or metrics that the candidate cannot
-substantiate.
-
-## Portfolio description
-
-**ResumeAI --- AI Resume Analyzer & ATS Optimizer:** Built a Streamlit
-application that extracts resume content from PDF/DOCX files, compares
-skills and keywords against job descriptions, calculates heuristic
-ATS-style match scores, suggests resume improvements, generates an
-optimized draft, and provides interview preparation resources with
-downloadable PDF reports.
-
-## Suggested next improvements
-
--   Add automated unit tests for score calculations and file extraction.
--   Improve keyword matching for synonyms and related phrases.
--   Add more robust handling for scanned PDFs using OCR if needed.
--   Add deployment instructions if publishing the app online.
--   Consider accessibility and security review before public deployment.
-## 📸 Application Screenshots
-
-![ResumeAI Homepage](homepage.png)
-
-![Resume Analysis](analysis.png)
-
-![Optimized Resume](optimized-resume.png)
-
-## 🌐 Live Demo
-[Try ResumeAI](https://resumeai-qguuz9q9cuccuw2kwhpyfy.streamlit.app/)
+- Better keyword matching for synonyms and related phrases
+- OCR support for scanned PDFs

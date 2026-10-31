@@ -563,8 +563,20 @@ def extract_text(file):
 def normalize_text(text):
     text = text.lower()
 
-    for alias, canonical in ALIASES.items():
-        text = text.replace(alias, canonical)
+    # Replace whole words/phrases only, longest alias first, so
+    # "node.js" never becomes "node.js.js" and "algorithms" never
+    # becomes "algorithmss".
+    for alias in sorted(ALIASES, key=len, reverse=True):
+        canonical = ALIASES[alias]
+
+        if alias == canonical:
+            continue
+
+        text = re.sub(
+            rf"(?<![a-z0-9.]){re.escape(alias)}(?![a-z0-9]|\.js)",
+            canonical,
+            text
+        )
 
     return re.sub(r"\s+", " ", text).strip()
 
@@ -573,13 +585,38 @@ def phrase_present(text, phrase):
     text = normalize_text(text)
     phrase = normalize_text(phrase)
 
+    # "+" and "#" are blocked after a match so that the skill "c"
+    # is not detected inside "c++" or "c#".
     return bool(
         re.search(
-            rf"(?<![a-z0-9]){re.escape(phrase)}(?![a-z0-9])",
+            rf"(?<![a-z0-9]){re.escape(phrase)}(?![a-z0-9+#])",
             text,
             re.IGNORECASE
         )
     )
+
+
+# Skills whose display name is not simply Title Case.
+DISPLAY_NAMES = {
+    "oop": "OOP", "sql": "SQL", "mysql": "MySQL",
+    "postgresql": "PostgreSQL", "mongodb": "MongoDB",
+    "sqlite": "SQLite", "html": "HTML", "css": "CSS",
+    "api": "API", "rest api": "REST API", "json": "JSON",
+    "xml": "XML", "ai": "AI", "ml": "ML", "nlp": "NLP",
+    "dsa": "DSA", "aws": "AWS", "gcp": "GCP", "c": "C",
+    "c++": "C++", "c#": "C#", "node.js": "Node.js",
+    "javascript": "JavaScript", "typescript": "TypeScript",
+    "github": "GitHub", "gitlab": "GitLab",
+    "fastapi": "FastAPI", "tensorflow": "TensorFlow",
+    "pytorch": "PyTorch", "scikit-learn": "scikit-learn",
+    "numpy": "NumPy", "power bi": "Power BI",
+    "data structures": "Data Structures",
+}
+
+
+def display_skill(skill):
+    skill = str(skill)
+    return DISPLAY_NAMES.get(skill.lower(), skill.title())
 
 
 def clean_for_keywords(text):
@@ -633,6 +670,17 @@ def categorize_skills(skills):
 # REQUIRED / PREFERRED
 # ============================================================
 
+def _last_hit(text, words):
+    """Position of the closest keyword before the skill, or -1."""
+    best = -1
+
+    for word in words:
+        position = text.rfind(word)
+        best = max(best, position)
+
+    return best
+
+
 def detect_required_preferred_skills(jd_text, jd_skills):
 
     normalized = normalize_text(jd_text)
@@ -642,29 +690,46 @@ def detect_required_preferred_skills(jd_text, jd_skills):
 
     for skill in jd_skills:
 
-        position = normalized.find(skill)
+        matches = list(
+            re.finditer(
+                rf"(?<![a-z0-9]){re.escape(skill)}(?![a-z0-9+#])",
+                normalized
+            )
+        )
 
-        if position == -1:
+        if not matches:
             continue
 
-        before = normalized[
-            max(0, position - 180):position
-        ]
+        kinds = []
 
-        if any(
-            word in before
-            for word in REQUIRED_WORDS
-        ):
+        for match in matches:
+
+            before = normalized[
+                max(0, match.start() - 180):match.start()
+            ]
+
+            required_hit = _last_hit(before, REQUIRED_WORDS)
+            preferred_hit = _last_hit(before, PREFERRED_WORDS)
+
+            # The closest cue wins, so "Required: python ...
+            # Preferred: aws" puts aws under preferred. A skill with
+            # no cue is treated as required.
+            if preferred_hit > required_hit:
+                kinds.append("preferred")
+            else:
+                kinds.append("required")
+
+        # One required mention is enough to make it required.
+        if "required" in kinds:
             required.append(skill)
-
-        elif any(
-            word in before
-            for word in PREFERRED_WORDS
-        ):
+        else:
             preferred.append(skill)
 
     if not required:
-        required = jd_skills[:]
+        required = [
+            skill for skill in jd_skills
+            if skill not in preferred
+        ]
 
     required = sorted(set(required))
     preferred = sorted(
@@ -1098,46 +1163,85 @@ def extract_phone(text):
     return match.group(0) if match else ""
 
 
+ROLE_WORDS = [
+    "developer", "engineer", "analyst", "intern",
+    "designer", "scientist", "manager", "programmer",
+    "architect", "consultant", "tester"
+]
+
+
+def _clean_role(text):
+    text = re.sub(r"[#*_`>]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip(" -:|")
+
+    # Cut sentence fragments such as
+    # "Junior Python Developer To Help Build".
+    text = re.split(
+        r"\s+(?:to|who|that|with|for|in|at|and|on)\s+",
+        text,
+        maxsplit=1,
+        flags=re.IGNORECASE
+    )[0]
+
+    return text.strip(" -:|,.")
+
+
 def detect_target_role(jd):
 
-    patterns = [
-        r"(?:job title|role|position)\s*[:\-]\s*([A-Za-z0-9 /&.-]{3,60})",
-        r"(?:hiring|looking for|seeking)\s+(?:a|an)?\s*([A-Za-z0-9 /&.-]{3,50})"
-    ]
+    # 1. Explicit label: "Job title: ...", "Role: ...", "Position: ..."
+    match = re.search(
+        r"(?:job title|role|position)\s*\**\s*[:\-]\s*\**\s*([^\n]{3,80})",
+        jd,
+        flags=re.IGNORECASE
+    )
 
-    for pattern in patterns:
+    if match:
+        role = _clean_role(match.group(1))
 
-        match = re.search(
-            pattern,
-            jd,
+        if len(role) > 2:
+            return role.title()
+
+    # 2. A heading or first lines that name the role.
+    for line in jd.splitlines()[:8]:
+
+        cleaned = _clean_role(line)
+
+        if (
+            3 <= len(cleaned) <= 60
+            and len(cleaned.split()) <= 6
+            and any(
+                word in cleaned.lower()
+                for word in ROLE_WORDS
+            )
+        ):
+            return cleaned.title()
+
+    # 3. "We are looking for a ... Developer"
+    match = re.search(
+        r"(?:hiring|looking for|seeking)\s+(?:a|an)?\s*([^\n.,]{3,80})",
+        jd,
+        flags=re.IGNORECASE
+    )
+
+    if match:
+        role = _clean_role(match.group(1))
+
+        # Drop leading adjectives like "motivated".
+        role = re.sub(
+            r"^(?:motivated|passionate|talented|enthusiastic|dedicated)\s+",
+            "",
+            role,
             flags=re.IGNORECASE
         )
 
-        if match:
-
-            role = re.split(
-                r"[\n,.]",
-                match.group(1)
-            )[0].strip()
-
-            if len(role) > 2:
-                return role.title()
-
-    for line in jd.splitlines()[:8]:
-
-        if any(
-            word in line.lower()
-            for word in [
-                "developer",
-                "engineer",
-                "analyst",
-                "intern",
-                "designer",
-                "scientist",
-                "manager"
-            ]
+        if (
+            len(role) > 2
+            and any(
+                word in role.lower()
+                for word in ROLE_WORDS
+            )
         ):
-            return line.strip()[:70]
+            return role.title()
 
     return "Target Role"
 
@@ -1715,7 +1819,7 @@ def generate_summary(data):
     )
 
     skills_text = ", ".join(
-        skills[:6]
+        display_skill(x) for x in skills[:6]
     )
 
     if not skills_text:
@@ -1773,98 +1877,190 @@ def improve_bullet(bullet):
 # OPTIMIZED RESUME
 # ============================================================
 
+SECTION_HEADINGS = {
+    "summary": ["professional summary", "summary", "career objective",
+                "objective", "profile"],
+    "skills": ["technical skills", "skills", "core skills"],
+    "projects": ["projects", "relevant projects", "project experience"],
+    "experience": ["experience", "work experience", "employment",
+                   "internship", "internships", "work history"],
+    "education": ["education", "academic background", "qualification",
+                  "academics"],
+    "certifications": ["certifications", "certificates",
+                       "courses & certifications",
+                       "courses and certifications", "courses"],
+    "achievements": ["achievements", "awards", "honors"],
+    "strengths": ["strengths"],
+    "languages": ["languages"],
+    "interests": ["interests", "hobbies"],
+}
+
+ALL_HEADINGS = {
+    h for names in SECTION_HEADINGS.values() for h in names
+}
+
+
+def _is_heading(line):
+    plain = re.sub(r"[^a-z& ]", "", line.lower()).strip()
+    return plain in ALL_HEADINGS
+
+
+def extract_section(text, section):
+    """Return the lines under a heading of the uploaded resume."""
+
+    wanted = SECTION_HEADINGS.get(section, [])
+    lines = [line.strip() for line in text.splitlines()]
+
+    start = None
+
+    for i, line in enumerate(lines):
+        plain = re.sub(r"[^a-z& ]", "", line.lower()).strip()
+
+        if plain in wanted:
+            start = i + 1
+            break
+
+    if start is None:
+        return []
+
+    collected = []
+
+    for line in lines[start:]:
+
+        if not line:
+            continue
+
+        if _is_heading(line):
+            break
+
+        collected.append(line)
+
+    return collected
+
+
+def _as_bullets(lines):
+    result = []
+
+    for line in lines:
+        is_bullet = bool(re.match(r"^[\u2022\-*\u00b7]\s*", line))
+        line = re.sub(r"^[\u2022\-*\u00b7]\s*", "", line).strip()
+
+        if not line:
+            continue
+
+        # Only rewrite real bullet sentences, not project titles.
+        if is_bullet and len(line.split()) > 5:
+            line = improve_bullet(line)
+
+        result.append("\u2022 " + line)
+
+    return result
+
+
 def generate_optimized_resume(data):
 
-    text = data.get(
-        "resume_text",
-        ""
-    )
+    text = data.get("resume_text", "")
 
     name = extract_name(text)
     email = extract_email(text)
     phone = extract_phone(text)
 
+    skill_data = data.get("skill_data", {})
+
     summary = generate_summary(data)
 
-    matching = data.get(
-        "skill_data",
-        {}
-    ).get(
-        "matching_required",
-        []
-    )
-
-    preferred = data.get(
-        "skill_data",
-        {}
-    ).get(
-        "matching_preferred",
-        []
+    # Skills that match the job come first, then the rest of the
+    # resume's own skills.
+    matched = (
+        skill_data.get("matching_required", [])
+        + skill_data.get("matching_preferred", [])
     )
 
     skills = list(
         dict.fromkeys(
-            matching + preferred
+            matched + skill_data.get("resume_skills", [])
         )
     )
 
-    missing = data.get(
-        "skill_data",
-        {}
-    ).get(
-        "missing_required",
-        []
-    )
+    missing = skill_data.get("missing_required", [])
 
     contact = " | ".join(
-        x
-        for x in [email, phone]
-        if x
+        x for x in [email, phone] if x
     )
 
-    result = name
+    parts = [name]
 
     if contact:
-        result += "\n" + contact
+        parts.append(contact)
 
-    result += (
-        "\n\nPROFESSIONAL SUMMARY\n"
-        + summary
-        + "\n\nTECHNICAL SKILLS\n"
-        + (
-            ", ".join(
-                x.title()
-                for x in skills
-            )
-            if skills
-            else "Relevant technical skills"
-        )
-        + "\n\nRELEVANT PROJECTS\n"
-        "• Highlight projects that demonstrate the technologies required for the target role.\n"
-        "• Include the problem, technologies, contribution and measurable result.\n\n"
-        "EDUCATION\n"
-        "• Add degree, university, graduation year and academic performance.\n\n"
-        "CERTIFICATIONS\n"
-        "• Add relevant technical certifications and courses.\n\n"
-        "ACHIEVEMENTS\n"
-        "• Add measurable academic, technical or extracurricular achievements.\n\n"
-        "TARGET ROLE\n"
-        + data.get(
-            "target_role",
-            "Target Role"
-        )
+    parts.append("")
+    parts.append("PROFESSIONAL SUMMARY")
+    parts.append(summary)
+
+    parts.append("")
+    parts.append("TECHNICAL SKILLS")
+    parts.append(
+        ", ".join(display_skill(x) for x in skills)
+        if skills
+        else "Add your technical skills here"
     )
 
-    if missing:
-        result += (
-            "\n\nSKILLS TO DEVELOP\n"
-            + ", ".join(
-                x.title()
-                for x in missing[:8]
-            )
+    # Sections are copied from the uploaded resume. A section that
+    # the resume does not have is listed at the end instead of being
+    # filled with placeholder text.
+    missing_sections = []
+
+    for title, key in [
+        ("PROJECTS", "projects"),
+        ("EXPERIENCE", "experience"),
+        ("EDUCATION", "education"),
+        ("CERTIFICATIONS", "certifications"),
+        ("ACHIEVEMENTS", "achievements"),
+    ]:
+        lines = extract_section(text, key)
+
+        if not lines:
+            if key != "experience":
+                missing_sections.append(title.title())
+            continue
+
+        parts.append("")
+        parts.append(title)
+
+        if key in ("education",):
+            parts.extend(lines)
+        else:
+            parts.extend(_as_bullets(lines))
+
+    languages = extract_section(text, "languages")
+
+    if languages:
+        parts.append("")
+        parts.append("LANGUAGES")
+        parts.append(", ".join(languages))
+
+    notes = []
+
+    if missing_sections:
+        notes.append(
+            "Sections not found in your resume: "
+            + ", ".join(missing_sections)
         )
 
-    return result
+    if missing:
+        notes.append(
+            "Skills in the job description that your resume "
+            "does not mention: "
+            + ", ".join(display_skill(x) for x in missing[:8])
+            + ". Add them only if you really have them."
+        )
+
+    if notes:
+        parts.append("")
+        parts.append("NOTES (delete before sending)")
+        parts.extend(notes)
+
+    return "\n".join(parts)
 
 
 # ============================================================
@@ -2707,7 +2903,7 @@ with tabs[1]:
 
         st.write(
             " • ".join(
-                x.title()
+                display_skill(x)
                 for x in matching_required
             )
         )
@@ -2734,7 +2930,7 @@ with tabs[1]:
             st.markdown(
                 f"""
                 <div class="danger-box">
-                ❌ <b>{skill.title()}</b>
+                ❌ <b>{display_skill(skill)}</b>
                 </div>
                 """,
                 unsafe_allow_html=True
@@ -2759,7 +2955,7 @@ with tabs[1]:
             []
         ):
             st.success(
-                skill.title()
+                display_skill(skill)
             )
 
     with c2:
@@ -2773,7 +2969,7 @@ with tabs[1]:
             []
         ):
             st.warning(
-                skill.title()
+                display_skill(skill)
             )
 
 
@@ -2804,7 +3000,7 @@ with tabs[2]:
             st.markdown(
                 f"""
                 <div class="skill-box">
-                💡 {skill.title()}
+                💡 {display_skill(skill)}
                 </div>
                 """,
                 unsafe_allow_html=True
@@ -2829,7 +3025,7 @@ with tabs[2]:
             st.markdown(
                 f"""
                 <div class="warning-box">
-                <b>{i}. {item['skill'].title()}</b>
+                <b>{i}. {display_skill(item['skill'])}</b>
                 <br>
                 <span class="small-muted">
                 {item['level']} • {item['action']}
@@ -3027,7 +3223,7 @@ with tabs[6]:
                 <b>{i}. {item['question']}</b>
                 <br><br>
                 {icon}
-                <b>{item['skill'].title()}</b>
+                <b>{display_skill(item['skill'])}</b>
                 —
                 {item['priority']} Priority
                 </div>

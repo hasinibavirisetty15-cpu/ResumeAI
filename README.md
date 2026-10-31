@@ -12,9 +12,11 @@ A Streamlit app that compares a resume against a job description and gives ATS-s
 ![Resume analysis](analysis.png)
 ![Optimized resume](optimized-resume.png)
 
+*Screenshots use a fictional sample resume and job description.*
+
 ## Features
 
-- Upload a resume in PDF or DOCX format and view the extracted text
+- Upload a resume in PDF, DOCX, or TXT format and view the extracted text
 - Compare detected skills and keywords against a pasted job description
 - ATS-style scores for job match, skills, keywords, structure, and content
 - Matched and missing skills/keywords, strengths, and improvement suggestions
@@ -25,7 +27,7 @@ A Streamlit app that compares a resume against a job description and gives ATS-s
 
 ## Tech Stack
 
-Python, Streamlit
+Python, Streamlit, pypdf, python-docx, ReportLab
 
 ## Run Locally
 
@@ -43,7 +45,7 @@ Then open `http://localhost:8501`.
 
 ## How to Use
 
-1. Upload a text-based PDF or DOCX resume.
+1. Upload a text-based PDF, DOCX, or TXT resume.
 2. Paste the target job description.
 3. Click **Analyze Resume** and review the results.
 4. Download the PDF report if needed.
